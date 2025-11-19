@@ -1,0 +1,25 @@
+---
+alwaysApply: false
+---
+
+# Remote Development Environment
+
+## System Configuration
+- **Server:** Jetson AGX Thor (JetPack 7.0, Python 3.12, CUDA 13.0)
+  - PyTorch: 2.9.1+cu130
+  - CUDA: 13.0 (Active)
+  - Device: NVIDIA Thor
+  - Headless environment (no local display server)
+  - No DISPLAY or WAYLAND_DISPLAY environment variables
+
+- **Client:** MacBook M3
+  - Connects to Jetson via SSH tunnel
+  - Uses Cursor IDE with remote file server access
+  - Files accessed from THOR using Cursor's remote file system
+
+## Development Implications
+- GUI applications require headless mode or remote viewing solutions
+- Visualization scripts should default to save mode (`--save 1`) or distant/server mode (`--mode distant`)
+- Never assume a local display is available
+- When suggesting fixes for display-related errors, recommend `--save` or `--mode distant` flags
+- All file operations occur on the remote Jetson server, not the local MacBook

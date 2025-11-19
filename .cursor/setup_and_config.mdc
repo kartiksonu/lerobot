@@ -4,6 +4,27 @@ alwaysApply: false
 
 # Remote Development Environment
 
+## About LeRobot
+
+**LeRobot** is Hugging Face's open-source robotics library that provides models, datasets, and tools for real-world robotics in PyTorch. The project focuses on imitation learning and reinforcement learning to enable robots to learn from human demonstrations.
+
+### Project Context
+- **Repository:** `/home/thor/lerobot`
+- **Installation:** Editable install with `uv pip install -e ".[feetech]"`
+- **Key Dependencies:**
+  - PyTorch 2.9.1+cu130 (CUDA 13.0)
+  - Feetech Servo SDK (for SO-ARM101 motors)
+  - ffmpeg (for video encoding/decoding)
+- **Purpose:** Training and deploying AI policies for the SO-ARM101 robotic arm
+- **Workflow:** Data collection → Training → Policy deployment
+
+### SO-ARM101 Robot
+- Low-cost robotic arm designed by TheRobotStudio and Hugging Face
+- Uses 6x STS3215 Feetech servos with magnetic encoders
+- Supports teleoperation (leader arm) and autonomous control
+- Compatible with LeRobot's imitation learning pipeline
+- Documentation: [Seeed Studio Wiki](https://wiki.seeedstudio.com/lerobot_so100m/)
+
 ## System Configuration
 - **Server:** Jetson AGX Thor (JetPack 7.0, Python 3.12, CUDA 13.0)
   - PyTorch: 2.9.1+cu130
@@ -16,6 +37,22 @@ alwaysApply: false
   - Connects to Jetson via SSH tunnel
   - Uses Cursor IDE with remote file server access
   - Files accessed from THOR using Cursor's remote file system
+
+## Robot Configuration
+- **Robot Type:** SO-ARM101 Follower Arm
+- **USB Port:** `/dev/ttyACM0`
+- **Robot ID:** `thor_follower_arm`
+- **Motor Configuration:**
+  - 6x STS3215 motors with IDs 1-6
+  - shoulder_pan (ID 1)
+  - shoulder_lift (ID 2)
+  - elbow_flex (ID 3)
+  - wrist_flex (ID 4)
+  - wrist_roll (ID 5)
+  - gripper (ID 6)
+- **Calibration File:** `~/.cache/huggingface/lerobot/calibration/robots/so101_follower/thor_follower_arm.json`
+- **Status:** Calibrated and connected
+- **Note:** Some joints may be at calibration limits; use raw encoder positions to move to center if needed
 
 ## Development Implications
 - GUI applications require headless mode or remote viewing solutions

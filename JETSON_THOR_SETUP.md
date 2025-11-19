@@ -37,3 +37,20 @@ uv pip install -e ".[test, aloha, pusht]"
 - **CUDA:** 13.0 (Active)
 - **Device:** NVIDIA Thor
 
+## Remote Development Setup
+
+**Server:** Jetson AGX Thor (JetPack 7.0, Python 3.12, CUDA 13.0)
+- Remote server running LeRobot
+- No local display (headless environment)
+- SSH access from client machine
+
+**Client:** MacBook M3
+- Connects to Jetson via SSH tunnel
+- Uses Cursor IDE with remote file server access
+- Files accessed from THOR using Cursor's remote file system
+
+**Implications:**
+- GUI applications require headless mode or remote viewing solutions
+- Visualization scripts should default to save mode or distant/server mode
+- No local display server available (no DISPLAY/WAYLAND_DISPLAY)
+- Use `--save` or `--mode distant` for visualization tools

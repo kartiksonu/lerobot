@@ -1,0 +1,301 @@
+---
+alwaysApply: false
+---
+
+# SO-ARM101 Follower Arm - Operational Notes & Learnings
+
+## Connection & Setup
+
+### Finding the USB Port
+- Use `lerobot-find-port` to identify the correct USB port
+- On Jetson, typically appears as `/dev/ttyACM0` or `/dev/ttyACM1`
+- Ensure proper permissions: `sudo chmod 666 /dev/ttyACM0`
+- Port must be stable - if it changes, update all commands
+
+### Initial Connection Steps
+1. Power on the arm (controller board LED should be on)
+2. Connect USB cable from controller board to Jetson
+3. Verify connection: `lerobot-find-port` or test with simple read commands
+4. All 6 motors should respond to individual read commands
+
+## Calibration
+
+### Calibration Process
+- **Command:** `lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=thor_follower_arm`
+- **Step 1:** Move arm to middle position (all joints roughly centered)
+  - **Critical:** Avoid extreme positions (0 or 4095 encoder values)
+  - If any joint is at max/min, calibration will fail with "Magnitude 2048 exceeds 2047" error
+- **Step 2:** Move each joint through full range of motion
+  - Move sequentially, one joint at a time
+  - Press Enter when done
+
+### Calibration Quirks
+- **Narrow ranges:** Some joints have very narrow calibrated ranges:
+  - `shoulder_pan`: Often only 7-10 encoder units
+  - `wrist_flex`: Often only 9-15 encoder units
+  - This limits movement range significantly
+- **Homing offset limits:** The homing offset calculation can exceed 2047 (max for 11-bit sign-magnitude encoding)
+  - If calibration fails, reposition joints slightly away from extremes
+- **Machine-specific:** Calibration files are machine-specific
+  - Calibration done on one machine won't work on another
+  - Location: `~/.cache/huggingface/lerobot/calibration/robots/so101_follower/{robot_id}.json`
+
+### Calibration File Structure
+```json
+{
+  "shoulder_pan": {
+    "id": 1,
+    "homing_offset": -1523,
+    "range_min": 2045,
+    "range_max": 2052
+  },
+  ...
+}
+```
+
+## Motor Communication
+
+### Motor IDs
+- All motors use IDs 1-6 (hardcoded in SO-ARM101 configuration)
+- Motor order: shoulder_pan (1), shoulder_lift (2), elbow_flex (3), wrist_flex (4), wrist_roll (5), gripper (6)
+- Motor model: STS3215 with 12-bit magnetic encoders (0-4095 range)
+
+### Communication Issues
+
+#### "Lock" Command Failures
+- **Symptom:** `Failed to write 'Lock' on id_=X` errors during `configure()`
+- **Cause:** Some motors may not respond to Lock command immediately
+- **Workaround:**
+  - Skip Lock command in custom scripts
+  - Use `Torque_Enable` directly
+  - Increase retry count: `num_retry=3`
+
+#### "Incorrect Status Packet" Errors
+- **Symptom:** `[TxRxResult] Incorrect status packet!`
+- **Causes:**
+  - Timing issues (commands too fast)
+  - Loose cable connections
+  - Motor power issues
+- **Solutions:**
+  - Add delays between commands (0.1-0.3s)
+  - Check all cable connections
+  - Verify power supply is stable
+  - Use `num_retry` parameter for retries
+
+#### "No Status Packet" Errors
+- **Symptom:** `[TxRxResult] There is no status packet!`
+- **Causes:**
+  - Motor disconnected or not powered
+  - Wrong motor ID
+  - Communication bus issue
+- **Solutions:**
+  - Verify motor is powered (LED on controller board)
+  - Check USB connection
+  - Test individual motors with direct read commands
+
+## Movement & Control
+
+### Normalized vs Raw Positions
+- **Normalized range:** -100 to +100 (for body joints), 0-100 (for gripper)
+- **Raw encoder range:** 0-4095 (12-bit)
+- **Calibration mapping:** Raw positions are mapped to normalized via calibration ranges
+
+### Joint Limit Issues
+- **Problem:** Joints can get stuck at normalized limits (-100 or +100)
+- **Cause:** Current raw position is outside calibrated range
+- **Detection:**
+  - Normalized position shows -100 or +100
+  - Raw position is below `range_min` or above `range_max`
+- **Solution:**
+  - Use raw encoder positions to move joints back into range
+  - Move to center: `(range_min + range_max) / 2`
+  - Then use normalized positions for control
+
+### Movement Best Practices
+- **Small steps:** Use step sizes of 2-5 units for smooth movement
+- **Delays:** Add 0.1-0.3s delays between commands
+- **Sequential control:** Move one joint at a time when testing
+- **Check limits:** Always verify joints are within calibrated ranges before movement
+
+## Operating Modes
+
+### Position Control Mode
+- **Default mode:** `OperatingMode.POSITION`
+- **Set via:** `bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)`
+- **Behavior:** Motor moves to specified goal position
+
+### Torque Control
+- **Enable:** `bus.write("Torque_Enable", motor, 1)`
+- **Disable:** `bus.write("Torque_Enable", motor, 0)`
+- **Important:** Disable torque before manual movement during calibration
+- **Auto-disable:** Set `disable_torque_on_disconnect=True` in config for safety
+
+## Common Issues & Solutions
+
+### Issue: Arm Won't Move
+**Symptoms:**
+- Commands sent but no movement
+- Positions stuck at -100 or +100
+
+**Diagnosis:**
+1. Check if joints are at limits: `get_observation()`
+2. Check raw positions vs calibration ranges
+3. Verify torque is enabled
+
+**Solutions:**
+1. Move joints to center using raw encoder positions
+2. Recalibrate with larger ranges if needed
+3. Check torque enable status
+
+### Issue: Calibration Fails with "Magnitude 2048" Error
+**Cause:** Joint positioned at extreme (encoder value 4095) when pressing Enter
+
+**Solution:**
+- Reposition joints slightly away from extremes
+- Aim for middle positions (around 2048 encoder value)
+- Retry calibration
+
+### Issue: Communication Errors During Movement
+**Symptoms:** Intermittent "No status packet" or "Incorrect status packet" errors
+
+**Solutions:**
+- Add delays between commands (0.1-0.3s)
+- Reduce movement speed/step size
+- Check cable connections
+- Verify stable power supply
+- Use retry logic: `num_retry=3`
+
+### Issue: Joints Move But Return to Original Position
+**Cause:** Torque not enabled or operating mode not set
+
+**Solution:**
+- Ensure `Torque_Enable = 1` for all motors
+- Verify `Operating_Mode = POSITION` (value 1)
+
+### Issue: Permission Denied Error on USB Port
+**Symptoms:**
+- `PermissionError: [Errno 13] Permission denied: '/dev/ttyACM0'`
+- `SerialException: could not open port /dev/ttyACM0: [Errno 13] Permission denied`
+- Connection fails immediately when trying to access the port
+
+**Cause:** User doesn't have read/write permissions on the USB serial port device
+
+**Temporary Fix (works until reboot):**
+```bash
+sudo chmod 666 /dev/ttyACM0
+```
+- This gives read/write permissions to all users
+- Must be run each time after reboot or if permissions reset
+
+**Permanent Fix (recommended):**
+1. Add user to `dialout` group:
+   ```bash
+   sudo usermod -aG dialout $USER
+   ```
+2. Log out and log back in (or restart) for group membership to take effect
+3. Verify membership: `groups` (should show `dialout` in the list)
+
+**Alternative Permanent Fix (udev rule):**
+Create a udev rule to set permissions automatically:
+```bash
+sudo nano /etc/udev/rules.d/99-ttyACM-permissions.rules
+```
+Add this line:
+```
+KERNEL=="ttyACM[0-9]*", MODE="0666", GROUP="dialout"
+```
+Then reload udev rules:
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+**Verification:**
+- Check permissions: `ls -la /dev/ttyACM0` (should show `rw-rw-rw-` or `crw-rw-rw-`)
+- Test connection: Try connecting to the arm again
+- Check if port is in use: `lsof /dev/ttyACM0` (should show nothing if free)
+
+## Keyboard Control
+
+### Implementation Notes
+- Use `termios` for raw keyboard input (no Enter required)
+- ESC key (ASCII 27) to exit
+- Small step sizes (2 units) prevent communication errors
+- Real-time position feedback helps verify movement
+
+### Control Mapping
+- Q/A: Shoulder Pan
+- W/S: Shoulder Lift
+- E/D: Elbow Flex
+- R/F: Wrist Flex
+- T/G: Wrist Roll
+- Y/H: Gripper
+
+## Teleoperation
+
+### Leader Arm Requirement
+- Standard teleoperation requires a leader arm (SO-101 Leader)
+- Leader arm must be calibrated separately
+- Both arms connect via USB to same or different ports
+
+### Alternative: Keyboard Control
+- Custom keyboard scripts can control follower arm directly
+- Useful when leader arm is not available
+- Less intuitive than leader arm but functional
+
+## Data Collection
+
+### Prerequisites
+- Arm must be calibrated
+- All joints must be within calibrated ranges
+- Stable camera setup (if using vision)
+- Consistent lighting and environment
+
+### Recording Commands
+- Use `lerobot-record` script
+- Requires teleoperator (leader arm) or policy
+- Specify task description and episode parameters
+
+## Best Practices
+
+1. **Always check calibration status** before operations
+2. **Verify joints are within ranges** before movement
+3. **Use small step sizes** for smooth control
+4. **Add delays** between motor commands
+5. **Check cable connections** if communication fails
+6. **Power cycle** if persistent communication issues
+7. **Save calibration files** - they're machine-specific
+8. **Test individual motors** if one fails
+9. **Monitor raw encoder values** to understand limits
+10. **Keep calibration ranges reasonable** - not too narrow
+
+## Troubleshooting Checklist
+
+- [ ] Power supply connected and LED on?
+- [ ] USB cable connected and port correct?
+- [ ] All motor cables secure?
+- [ ] Calibration file exists and loaded?
+- [ ] Joints within calibrated ranges?
+- [ ] Torque enabled on all motors?
+- [ ] Operating mode set to POSITION?
+- [ ] No extreme positions (0 or 4095)?
+- [ ] Sufficient delays between commands?
+- [ ] Retry logic enabled for critical commands?
+
+## Known Limitations
+
+1. **Narrow calibration ranges:** Some joints have very limited movement ranges
+2. **Communication timing:** Requires careful timing between commands
+3. **Lock command issues:** Some motors don't respond to Lock reliably
+4. **Normalized limits:** Joints can get stuck at -100/+100 if outside range
+5. **Machine-specific calibration:** Can't share calibration between machines
+6. **Leader arm required:** Full teleoperation needs leader arm hardware
+
+## Future Improvements
+
+- Recalibrate with larger ranges for more movement
+- Implement better error recovery in control scripts
+- Add automatic center positioning on startup
+- Create better keyboard control interface
+- Add visual feedback for joint positions
+- Implement safety limits and emergency stop

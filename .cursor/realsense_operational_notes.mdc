@@ -1,0 +1,370 @@
+---
+alwaysApply: false
+---
+
+# Intel RealSense D435I - Operational Notes & Troubleshooting
+
+## Camera Hardware
+
+### Model Information
+- **Model:** Intel RealSense D435I
+- **Serial Number:** `844212071286`
+- **Firmware:** 5.17.0.10 (Updated successfully from 5.15.1)
+- **USB Type:** 2.1 (Note: Shows as 2.1 but works fine)
+- **Product ID:** 0B3A
+- **Product Line:** D400
+- **Physical Port:** `/sys/devices/platform/bus@0/a80aa10000.usb/usb2/2-3/2-3.1/2-3.1:1.0/video4linux/video0`
+- **Video Device:** `/dev/video0`
+
+## Installation & Setup
+
+### Installation Method
+- **Built from source** (required for Python 3.12 on ARM64/Jetson)
+- **Location:** `/home/thor/librealsense`
+- **SDK Version:** 2.54.2 (built from source, v2.54.2 branch)
+- **Python Bindings:** `pyrealsense2` built from source and installed in virtual environment
+- **Build Fix:** Added `#include <cstdint>` to `third-party/rsutils/src/version.cpp` and `third-party/rsutils/include/rsutils/version.h` to fix compilation with GCC 13
+
+### UDEV Rules Setup
+**Required for camera access without sudo:**
+
+```bash
+# Copy udev rules
+sudo cp /home/thor/librealsense/config/99-realsense-libusb.rules /etc/udev/rules.d/
+
+# Reload udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Add user to groups (if not already)
+sudo usermod -aG plugdev,video $USER
+```
+
+**After setup:** Unplug and replug camera, or restart Jetson.
+
+## Running RealSense Viewer on Jetson Monitor
+
+### Setup (One-time)
+Display settings added to `~/.zshrc` and `~/.bashrc`:
+
+```bash
+# RealSense Viewer - Display configuration for Jetson local monitor
+export DISPLAY=:1
+export XAUTHORITY=/run/user/1000/gdm/Xauthority
+xhost +local: > /dev/null 2>&1
+```
+
+### Usage
+**Note:** Official `realsense-viewer` GUI is not available in librealsense v2.54.2. Use Python-based viewer instead.
+
+**Python Viewer (simple_realsense_viewer.py):**
+```bash
+cd /home/thor/lerobot
+source .venv/bin/activate
+source ~/.zshrc  # Loads DISPLAY settings
+python simple_realsense_viewer.py
+```
+
+**Controls:**
+- Press **'q'** to quit
+- Press **'s'** to save current frames to `/tmp/realsense_*.png`
+
+**Alternative - Frame Saver (no GUI):**
+```bash
+python save_realsense_frames.py
+```
+Saves frames continuously to `/tmp/` without opening a window.
+
+**Viewer Features:**
+- Shows color stream (left) and depth stream (right) side-by-side
+- Real-time visualization on Jetson monitor
+- Window title: "RealSense Viewer (Color | Depth)"
+
+## Quick Start - Loading Images
+
+### Simplest Method: Command-Line Tool
+```bash
+rs-save-to-disk
+```
+Saves: `rs-save-to-disk-output-Color.png` and `rs-save-to-disk-output-Depth.png`
+
+### Standard Python Pattern (Official Intel Examples)
+```python
+import pyrealsense2 as rs
+import numpy as np
+
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 1280, 720, rs.format.rgb8, 30)
+
+pipeline.start(config)
+frames = pipeline.wait_for_frames()
+color_frame = frames.get_color_frame()
+color_image = np.asanyarray(color_frame.get_data())
+pipeline.stop()
+```
+
+### LeRobot Integration
+```python
+from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.cameras.realsense.camera_realsense import RealSenseCamera
+
+config = RealSenseCameraConfig(
+    serial_number_or_name="844212071286",
+    fps=30,
+    width=1280,
+    height=720
+)
+camera = RealSenseCamera(config)
+camera.connect()
+frame = camera.read()
+camera.disconnect()
+```
+
+### LeRobot Recording
+```bash
+lerobot-record \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM0 \
+    --robot.id=thor_follower_arm \
+    --robot.cameras='{"front": {"type": "intelrealsense", "serial_number_or_name": "844212071286", "fps": 30, "width": 1280, "height": 720}}'
+```
+
+## Command-Line Tools
+
+- **`rs-save-to-disk`** - Quick image capture (saves Color.png and Depth.png) - **Not available in v2.54.2**
+- **`rs-enumerate-devices`** - List cameras with details
+- **`rs-record`** - Record streams to bag file: `rs-record -t 10 output.bag`
+- **`rs-fw-update`** - Firmware update tool
+- **`realsense-viewer`** - GUI viewer - **Not available in v2.54.2** (use `simple_realsense_viewer.py` instead)
+
+## Common Issues & Solutions
+
+### Issue: Camera Not Detected
+**Symptoms:** `lerobot-find-cameras` shows no cameras, `rs.context().query_devices()` returns empty
+
+**Solutions:**
+1. Check USB: `lsusb | grep -i intel`
+2. Check video device: `ls -la /dev/video*`
+3. Reconnect USB cable (try different port)
+4. Verify USB 3.0 port (blue connector)
+5. Check kernel modules: `lsmod | grep uvcvideo`
+6. Restart udev: `sudo udevadm control --reload-rules`
+
+### Issue: Permission Denied on Video Device
+**Symptoms:** `PermissionError` when accessing `/dev/video0`
+
+**Solutions:**
+1. **Temporary:** `sudo chmod 666 /dev/video0`
+2. **Permanent:** Add user to `video` group:
+   ```bash
+   sudo usermod -aG video $USER
+   # Then log out and back in
+   ```
+
+### Issue: UDEV Rules Missing
+**Symptoms:** Viewer shows "RealSense UDEV-rules are missing" warning
+
+**Solution:**
+```bash
+sudo cp /home/thor/librealsense/config/99-realsense-libusb.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+# Unplug and replug camera
+```
+
+### Issue: Viewer Won't Open on Jetson Monitor
+**Symptoms:** `realsense-viewer` runs but no window appears
+
+**Solutions:**
+1. Check DISPLAY: `echo $DISPLAY` (should be `:1`)
+2. Reload config: `source ~/.zshrc`
+3. Manually set: `export DISPLAY=:1 && export XAUTHORITY=/run/user/1000/gdm/Xauthority`
+4. Allow X access: `xhost +local:`
+5. Check if viewer process is running: `ps aux | grep realsense-viewer`
+
+### Issue: Firmware Update Failed / "bad optional access" Error
+**Symptoms:**
+- "Original device did not connect in time" error during GUI update
+- After failed update: "bad optional access" error when trying to access camera
+- `rs-enumerate-devices` shows "No device detected" even though USB shows camera
+
+**Solution - Complete Recovery Process:**
+1. **Clean up existing installation:**
+   ```bash
+   # Remove librealsense build directory
+   rm -rf ~/librealsense
+   # Remove system libraries
+   sudo rm -f /usr/local/lib/librealsense2* /usr/local/bin/rs-*
+   # Remove Python bindings
+   pip uninstall -y pyrealsense2
+   ```
+
+2. **Reinstall from source:**
+   ```bash
+   # Install dependencies
+   sudo apt-get install -y curl gnupg lsb-release libusb-1.0-0-dev build-essential cmake git pkg-config
+
+   # Clone and build
+   git clone --depth 1 --branch v2.54.2 https://github.com/IntelRealSense/librealsense.git ~/librealsense
+
+   # Fix compilation issue (GCC 13 compatibility)
+   sed -i '5a#include <cstdint>' ~/librealsense/third-party/rsutils/src/version.cpp
+   sed -i '6a#include <cstdint>' ~/librealsense/third-party/rsutils/include/rsutils/version.h
+
+   # Build
+   cmake -S ~/librealsense -B ~/librealsense/build -DFORCE_RSUSB_BACKEND=ON -DBUILD_EXAMPLES=OFF -DBUILD_GRAPHICAL_EXAMPLES=OFF -DBUILD_PYTHON_BINDINGS=ON
+   cmake --build ~/librealsense/build -j"$(nproc)"
+   sudo cmake --install ~/librealsense/build
+   sudo ldconfig
+   ```
+
+3. **Rebuild Python bindings:**
+   ```bash
+   cd ~/librealsense/build
+   cmake --build . --target pyrealsense2 -j"$(nproc)"
+   # Install manually
+   sudo rm -rf ~/.venv/lib/python3.12/site-packages/pyrealsense2*
+   mkdir -p ~/.venv/lib/python3.12/site-packages/pyrealsense2
+   cp -r ~/librealsense/wrappers/python/pyrealsense2/* ~/.venv/lib/python3.12/site-packages/pyrealsense2/
+   cp ~/librealsense/build/Release/pyrealsense2.cpython-312-aarch64-linux-gnu.so ~/.venv/lib/python3.12/site-packages/pyrealsense2/pyrealsense2.so
+   ```
+
+4. **Firmware recovery:**
+   ```bash
+   # Download firmware file (e.g., Signed_Image_UVC_5_17_0_10.bin)
+   # Place in $HOME/
+
+   # Try recovery update
+   sudo rs-fw-update -r -f ~/Signed_Image_UVC_5_17_0_10.bin || \
+   sudo rs-fw-update -f ~/Signed_Image_UVC_5_17_0_10.bin -s 844212071286 || \
+   sudo rs-fw-update -f ~/Signed_Image_UVC_5_17_0_10.bin
+
+   # Wait for camera to reinitialize
+   sleep 12
+   rs-enumerate-devices
+   ```
+
+**Result:** Successfully recovered camera from corrupted firmware state. Camera now works with firmware 5.17.0.10.
+
+### Issue: Frame Drops or Low FPS
+**Symptoms:** FPS lower than configured, stuttering video
+
+**Solutions:**
+1. Lower resolution (640x480 instead of 1280x720)
+2. Reduce frame rate (15 FPS instead of 30)
+3. Disable unused streams (depth, IR)
+4. Use USB 3.0 port (not USB 2.0)
+5. Close other applications using camera
+
+### Issue: Import Error: No module named 'pyrealsense2'
+**Solutions:**
+1. Verify virtual environment is activated
+2. Check installation: `pip list | grep pyrealsense2`
+3. If source build required, rebuild Python bindings:
+   ```bash
+   cd ~/librealsense/build
+   cmake --build . --target pyrealsense2 -j"$(nproc)"
+   # Then manually install (see firmware recovery section above)
+   ```
+4. If version mismatch error (e.g., "librealsense2.so.2.56: cannot open"), rebuild bindings to match SDK version
+
+### Issue: SDK Version Mismatch After Rebuild
+**Symptoms:** `ImportError: librealsense2.so.2.56: cannot open shared object file` after rebuilding SDK
+
+**Solution:** Python bindings must match SDK version. After rebuilding SDK:
+1. Rebuild Python bindings: `cmake --build ~/librealsense/build --target pyrealsense2`
+2. Remove old bindings: `sudo rm -rf ~/.venv/lib/python3.12/site-packages/pyrealsense2*`
+3. Install new bindings manually (copy .so file and package files)
+4. Verify: `python -c "import pyrealsense2 as rs; print(rs.__version__)"`
+
+### Issue: Camera Disconnects During Use
+**Solutions:**
+1. Use powered USB hub
+2. Try different USB port
+3. Check cable quality (USB 3.0 certified)
+4. Disable USB autosuspend:
+   ```bash
+   echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b3a", ATTR{power/autosuspend}="-1"' | sudo tee /etc/udev/rules.d/99-realsense-power.rules
+   sudo udevadm control --reload-rules
+   ```
+
+### Issue: Config File Warning
+**Symptoms:** "No valid configuration file found at : /home/thor/.realsense-config.json"
+
+**Solution:** This is harmless (viewer loads defaults). To silence:
+```bash
+echo '{}' > ~/.realsense-config.json
+```
+
+## Stream Configuration
+
+### Default Stream Profile
+- **Stream Type:** Color (RGB)
+- **Format:** rgb8
+- **Resolution:** 1280x720 (HD)
+- **Frame Rate:** 30 FPS
+- **Auto-exposure:** Enabled by default
+
+### Resolution Options
+- Common: 640x480, 1280x720, 1920x1080
+- Frame rates: 6, 15, 30, 60 FPS (depending on resolution)
+- Lower resolution = higher frame rate capability
+
+## Best Practices
+
+1. Always specify serial number in LeRobot config
+2. Use USB 3.0 ports for reliable high-speed transfer
+3. Test camera before recording long datasets
+4. Close other camera applications before using with LeRobot
+5. Check permissions on `/dev/video*` devices
+6. Use consistent resolution/FPS across recording sessions
+7. Verify camera connection with `lerobot-find-cameras` before starting
+
+## Troubleshooting Checklist
+
+- [ ] Camera detected by `lerobot-find-cameras`?
+- [ ] USB 3.0 connection (blue port)?
+- [ ] Video device permissions correct?
+- [ ] UDEV rules installed?
+- [ ] User in `plugdev` and `video` groups?
+- [ ] No other applications using camera?
+- [ ] Virtual environment activated?
+- [ ] `pyrealsense2` installed and importable?
+- [ ] Serial number matches in config?
+- [ ] Resolution/FPS within camera capabilities?
+- [ ] DISPLAY set correctly for viewer?
+
+## Known Limitations
+
+1. Source build required for Python 3.12 on ARM64
+2. USB bandwidth limits frame rate at high resolutions
+3. Single user access - camera can't be shared simultaneously
+4. Power requirements - may need external power for stability
+5. USB cable quality critical for reliable operation
+6. Official GUI viewer (`realsense-viewer`) not available in v2.54.2 - use Python-based viewer instead
+7. `rs-save-to-disk` tool not available in v2.54.2 - use Python scripts or `rs-record` instead
+8. Compilation requires fix for GCC 13 compatibility (cstdint include)
+
+## Viewer Scripts
+
+### Available Scripts
+- **`simple_realsense_viewer.py`** - Python-based GUI viewer (OpenCV)
+  - Location: `/home/thor/lerobot/simple_realsense_viewer.py`
+  - Shows color and depth streams side-by-side
+  - Requires DISPLAY=:1 (set in .zshrc/.bashrc)
+
+- **`save_realsense_frames.py`** - Frame saver (no GUI)
+  - Location: `/home/thor/lerobot/save_realsense_frames.py`
+  - Saves frames to `/tmp/` continuously
+  - Useful when GUI doesn't work or for headless operation
+
+### Running Viewer
+```bash
+cd /home/thor/lerobot
+source .venv/bin/activate
+source ~/.zshrc  # Loads DISPLAY settings
+python simple_realsense_viewer.py
+```
+
+**Note:** Display settings are in `.zshrc`/`.bashrc`, no separate script needed.

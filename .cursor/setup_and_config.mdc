@@ -54,9 +54,30 @@ alwaysApply: false
 - **Status:** Calibrated and connected
 - **Note:** Some joints may be at calibration limits; use raw encoder positions to move to center if needed
 
+## Camera Configuration
+- **Camera Type:** Intel RealSense D435I
+- **Serial Number:** `844212071286`
+- **Firmware Version:** 5.17.0.10 (recovered from corrupted state)
+- **USB Type:** 2.1 (shows as 2.1 but works fine)
+- **Physical Port:** `/sys/devices/platform/bus@0/a80aa10000.usb/usb2/2-3/2-3.1/2-3.1:1.0/video4linux/video0`
+- **Default Stream Profile:**
+  - Stream Type: Color
+  - Format: rgb8
+  - Resolution: 1280x720
+  - FPS: 30
+- **SDK Installation:** Built from source in `/home/thor/librealsense`
+  - C++ SDK: `librealsense2` (v2.54.2)
+  - Python bindings: `pyrealsense2` (built from source, installed in virtual environment)
+  - Build fix applied: Added `#include <cstdint>` for GCC 13 compatibility
+- **Viewer:** Python-based viewer (`simple_realsense_viewer.py`) - official GUI not available in v2.54.2
+- **Display Setup:** DISPLAY=:1 and XAUTHORITY configured in `~/.zshrc` and `~/.bashrc`
+- **LeRobot Integration:** Compatible with `intelrealsense` camera type, tested and working
+- **Status:** Installed, firmware recovered, tested, and ready for use
+
 ## Development Implications
-- GUI applications require headless mode or remote viewing solutions
-- Visualization scripts should default to save mode (`--save 1`) or distant/server mode (`--mode distant`)
-- Never assume a local display is available
-- When suggesting fixes for display-related errors, recommend `--save` or `--mode distant` flags
+- GUI applications can use Jetson's local monitor via DISPLAY=:1 (configured in .zshrc/.bashrc)
+- RealSense viewer uses Python-based OpenCV viewer (official GUI not available in SDK v2.54.2)
+- Visualization scripts should default to save mode (`--save 1`) or distant/server mode (`--mode distant`) for headless operation
+- Display settings are in `.zshrc`/`.bashrc` - no separate scripts needed
 - All file operations occur on the remote Jetson server, not the local MacBook
+- Camera firmware recovery process documented in `.cursor/realsense_operational_notes.mdc`

@@ -125,6 +125,7 @@ from lerobot.utils.utils import (
     init_logging,
     log_say,
 )
+from lerobot.utils.loud_banner import banner
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 
 
@@ -448,6 +449,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     with VideoEncodingManager(dataset):
         recorded_episodes = 0
         while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
+            banner(
+                "RECORD",
+                f"EPISODE {recorded_episodes + 1} / {cfg.dataset.num_episodes}   —   PERFORM THE TASK",
+                style="go",
+            )
             log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
             record_loop(
                 robot=robot,
@@ -471,6 +477,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             if not events["stop_recording"] and (
                 (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
             ):
+                banner(
+                    "RESET",
+                    f"reset the scene — next episode starts in {cfg.dataset.reset_time_s:g}s",
+                    style="reset",
+                )
                 log_say("Reset the environment", cfg.play_sounds)
                 record_loop(
                     robot=robot,

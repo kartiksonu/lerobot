@@ -23,12 +23,35 @@ from .constants import OBS_PREFIX, OBS_STR
 
 
 def init_rerun(session_name: str = "lerobot_control_loop") -> None:
-    """Initializes the Rerun SDK for visualizing the control loop."""
+    """Initializes the Rerun SDK for visualizing the control loop.
+
+    Local-modification (Thor): default mode is headless serve_grpc so the
+    viewer can run on a remote machine (e.g. MacBook) via:
+        ssh -L 9876:localhost:9876 thor@<thor-ip>
+        rerun --connect rerun+http://127.0.0.1:9876/proxy
+
+    Env vars:
+        LEROBOT_RERUN_HEADLESS=1  (default) -> rr.serve_grpc on
+            LEROBOT_RERUN_GRPC_PORT (default 9876) + rr.serve_web_viewer
+            with open_browser=False. Suitable for headless Thor.
+        LEROBOT_RERUN_HEADLESS=0  -> upstream behavior (rr.spawn, requires
+            a local DISPLAY + GPU on the host running lerobot).
+        LEROBOT_RERUN_MEMORY_LIMIT (default "10%") -> only used by spawn mode.
+    """
     batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
     os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
-    rr.init(session_name)
-    memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
-    rr.spawn(memory_limit=memory_limit)
+
+    headless = os.getenv("LEROBOT_RERUN_HEADLESS", "1") == "1"
+    if headless:
+        rr.init(session_name, spawn=False)
+        grpc_port = int(os.getenv("LEROBOT_RERUN_GRPC_PORT", "9876"))
+        server_uri = rr.serve_grpc(grpc_port=grpc_port)
+        rr.serve_web_viewer(open_browser=False, connect_to=server_uri)
+        print(f"[lerobot init_rerun] headless. connect via: {server_uri}")
+    else:
+        rr.init(session_name)
+        memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
+        rr.spawn(memory_limit=memory_limit)
 
 
 def _is_scalar(x):

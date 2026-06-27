@@ -1,0 +1,12 @@
+[Unit]
+Description=x11vnc service (X11 display :0)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -display :0 -auth /root/.Xauthority -forever -loop -noxdamage -repeat -rfbport 5900 -shared -rfbauth /etc/x11vnc.passwd -o /var/log/x11vnc.log
+ExecStartPre=/bin/cp /run/user/1000/gdm/Xauthority /root/.Xauthority
+ExecStartPre=/bin/chmod 600 /root/.Xauthority
+
+[Install]
+WantedBy=multi-user.target

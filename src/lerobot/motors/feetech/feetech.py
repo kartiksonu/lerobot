@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import time
 from copy import deepcopy
 from enum import Enum
 from pprint import pformat
@@ -296,7 +297,16 @@ class FeetechMotorsBus(MotorsBus):
     def disable_torque(self, motors: str | list[str] | None = None, num_retry: int = 0) -> None:
         for motor in self._get_motors_list(motors):
             self.write("Torque_Enable", motor, TorqueMode.DISABLED.value, num_retry=num_retry)
-            self.write("Lock", motor, 0, num_retry=num_retry)
+            # Add small delay before Lock command to avoid timing issues
+            time.sleep(0.1)
+            # Lock command with increased retries and graceful failure handling
+            try:
+                self.write("Lock", motor, 0, num_retry=3)
+            except (ConnectionError, RuntimeError) as e:
+                logger.warning(
+                    f"Failed to write 'Lock' on motor '{motor}' (id={self.motors[motor].id}) "
+                    f"after retries: {e}. Continuing without Lock command."
+                )
 
     def _disable_torque(self, motor_id: int, model: str, num_retry: int = 0) -> None:
         addr, length = get_address(self.model_ctrl_table, model, "Torque_Enable")
@@ -307,7 +317,16 @@ class FeetechMotorsBus(MotorsBus):
     def enable_torque(self, motors: str | list[str] | None = None, num_retry: int = 0) -> None:
         for motor in self._get_motors_list(motors):
             self.write("Torque_Enable", motor, TorqueMode.ENABLED.value, num_retry=num_retry)
-            self.write("Lock", motor, 1, num_retry=num_retry)
+            # Add small delay before Lock command to avoid timing issues
+            time.sleep(0.1)
+            # Lock command with increased retries and graceful failure handling
+            try:
+                self.write("Lock", motor, 1, num_retry=3)
+            except (ConnectionError, RuntimeError) as e:
+                logger.warning(
+                    f"Failed to write 'Lock' on motor '{motor}' (id={self.motors[motor].id}) "
+                    f"after retries: {e}. Continuing without Lock command."
+                )
 
     def _encode_sign(self, data_name: str, ids_values: dict[int, int]) -> dict[int, int]:
         for id_ in ids_values:

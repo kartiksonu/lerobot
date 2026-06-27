@@ -16,6 +16,7 @@
 
 import logging
 import time
+import numpy as np
 from functools import cached_property
 from typing import Any
 
@@ -174,9 +175,22 @@ class SO101Follower(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Read arm position
+        # Read arm position (with retries for transient communication issues)
         start = time.perf_counter()
-        obs_dict = self.bus.sync_read("Present_Position")
+        try:
+            obs_dict = self.bus.sync_read("Present_Position", num_retry=2)
+        except (ConnectionError, Exception) as e:
+            # Fallback: read motors individually if sync_read fails
+            logger.warning(f"sync_read failed ({type(e).__name__}: {e}), falling back to individual reads")
+            obs_dict = {}
+            for motor in self.bus.motors:
+                try:
+                    pos = self.bus.read("Present_Position", motor, num_retry=1)
+                    obs_dict[motor] = pos
+                except Exception as read_err:
+                    logger.warning(f"Failed to read {motor}: {read_err}")
+                    # Use last known position or 0
+                    obs_dict[motor] = 0.0
         obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
@@ -184,7 +198,21 @@ class SO101Follower(Robot):
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():
             start = time.perf_counter()
-            obs_dict[cam_key] = cam.async_read()
+            try:
+                obs_dict[cam_key] = cam.async_read()
+            except DeviceNotConnectedError as e:
+                logger.warning(f"{self} camera {cam_key} not connected: {e}")
+                cam_cfg = self.config.cameras[cam_key]
+                obs_dict[cam_key] = np.zeros((cam_cfg.height, cam_cfg.width, 3), dtype=np.uint8)
+            except TimeoutError as e:
+                logger.warning(f"{self} timeout reading {cam_key}: {e}")
+                cam_cfg = self.config.cameras[cam_key]
+                obs_dict[cam_key] = np.zeros((cam_cfg.height, cam_cfg.width, 3), dtype=np.uint8)
+            except Exception as e:
+                logger.warning(f"Unexpected error reading {cam_key}: {e}")
+                cam_cfg = self.config.cameras[cam_key]
+                obs_dict[cam_key] = np.zeros((cam_cfg.height, cam_cfg.width, 3), dtype=np.uint8)
+
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 

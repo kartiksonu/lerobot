@@ -37,11 +37,34 @@ def _is_scalar(x):
     )
 
 
+def _single_view_blueprint(view: str):
+    """Frozen layout: one Spatial2DView pinned to `view`, all side panels collapsed.
+
+    `view` is a Rerun entity path, e.g. "/observation.wrist". Note that camera
+    keys are logged by `log_rerun_data` as "observation.<cam>" (dots are kept
+    literally), so the wrist feed is at "/observation.wrist".
+    """
+    import rerun.blueprint as rrb
+
+    return rrb.Blueprint(
+        rrb.Spatial2DView(origin=view, name=view.lstrip("/")),
+        rrb.BlueprintPanel(state="collapsed"),
+        rrb.SelectionPanel(state="collapsed"),
+        rrb.TimePanel(state="collapsed"),
+        auto_layout=False,
+        auto_views=False,
+    )
+
+
 def init_rerun(
     session_name: str = "lerobot_control_loop", ip: str | None = None, port: int | None = None
 ) -> None:
     """
     Initializes the Rerun SDK for visualizing the control loop.
+
+    Set LEROBOT_RERUN_VIEW to a single Rerun entity path (e.g. "/observation.wrist") to freeze the
+    local viewer to just that one view and hide everything else. Unset -> default auto layout (all
+    observations/actions). Ignored when streaming to a remote Rerun server (ip/port set).
 
     Args:
         session_name: Name of the Rerun session.
@@ -61,7 +84,9 @@ def init_rerun(
     if ip and port:
         rr.connect_grpc(url=f"rerun+http://{ip}:{port}/proxy")
     else:
-        rr.spawn(memory_limit=memory_limit)
+        view = os.getenv("LEROBOT_RERUN_VIEW")
+        blueprint = _single_view_blueprint(view) if view else None
+        rr.spawn(memory_limit=memory_limit, default_blueprint=blueprint)
 
 
 def shutdown_rerun() -> None:

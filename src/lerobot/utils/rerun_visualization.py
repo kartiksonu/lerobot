@@ -38,16 +38,21 @@ def _is_scalar(x):
 
 
 def _single_view_blueprint(view: str):
-    """Frozen layout: one Spatial2DView pinned to `view`, all side panels collapsed.
+    """Frozen layout pinned to `view`, all side panels collapsed.
 
-    `view` is a Rerun entity path, e.g. "/observation.wrist". Note that camera
-    keys are logged by `log_rerun_data` as "observation.<cam>" (dots are kept
-    literally), so the wrist feed is at "/observation.wrist".
+    `view` is one Rerun entity path or a comma-separated list, e.g.
+    "/observation.wrist" or "/observation.brio,/observation.wrist" (rendered
+    side-by-side, left to right, in the order given). Note that camera keys are
+    logged by `log_rerun_data` as "observation.<cam>" (dots are kept literally),
+    so the wrist feed is at "/observation.wrist".
     """
     import rerun.blueprint as rrb
 
+    paths = [v.strip() for v in view.split(",") if v.strip()]
+    views = [rrb.Spatial2DView(origin=v, name=v.lstrip("/")) for v in paths]
+    root = views[0] if len(views) == 1 else rrb.Horizontal(*views)
     return rrb.Blueprint(
-        rrb.Spatial2DView(origin=view, name=view.lstrip("/")),
+        root,
         rrb.BlueprintPanel(state="collapsed"),
         rrb.SelectionPanel(state="collapsed"),
         rrb.TimePanel(state="collapsed"),
@@ -120,6 +125,12 @@ def _build_blueprint(observation_paths: set[str], action_paths: set[str], image_
 def _ensure_blueprint(observation_paths: set[str], action_paths: set[str], image_paths: set[str]) -> None:
     """Build and send the blueprint once, from the first observation and action data."""
     if getattr(log_rerun_data, "blueprint", None) is not None:
+        return
+
+    # A frozen view (LEROBOT_RERUN_VIEW) was already sent by init_rerun — don't
+    # override it with the auto grid on the first data frame.
+    if os.getenv("LEROBOT_RERUN_VIEW"):
+        log_rerun_data.blueprint = "frozen"
         return
 
     if not (observation_paths or action_paths or image_paths):

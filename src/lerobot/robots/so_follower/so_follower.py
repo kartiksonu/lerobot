@@ -191,7 +191,9 @@ class SOFollower(Robot):
         for cam_key, cam in self.cameras.items():
             if getattr(cam, "use_rgb", True):
                 start = time.perf_counter()
-                obs_dict[cam_key] = cam.read_latest()
+                # Stale-frame guard: crash loud if a frame is older than this instead of
+                # silently recording repeated frames. 500ms tolerates brief hiccups.
+                obs_dict[cam_key] = cam.read_latest(max_age_ms=500)
                 dt_ms = (time.perf_counter() - start) * 1e3
                 logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 

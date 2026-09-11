@@ -1,0 +1,5 @@
+# Prevent USB autosuspend on the SO-101 cameras (stops mid-run "No such device" dropouts).
+# Sonix wrist camera (ARC International / USB2.0_CAM1)
+SUBSYSTEM=="usb", ATTR{idVendor}=="05a3", ATTR{idProduct}=="9230", TEST=="power/control", ATTR{power/control}="on"
+# Top camera (USB 2.0 Camera SN0001)
+SUBSYSTEM=="usb", ATTR{idVendor}=="328f", ATTR{idProduct}=="0073", TEST=="power/control", ATTR{power/control}="on"

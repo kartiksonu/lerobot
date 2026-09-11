@@ -579,7 +579,11 @@ class DatasetWriter:
             # save_episode() mutates the buffer. Handle both types here.
             if isinstance(episode_index, np.ndarray):
                 episode_index = episode_index.item() if episode_index.size == 1 else episode_index[0]
-            for cam_key in self._meta.image_keys:
+            # Include video (and depth) keys: their frames are also staged as temp images
+            # before encoding. Cleaning only image_keys leaked discarded-attempt frames
+            # into the next episode's video (video/data desync after a re-record).
+            cam_keys = dict.fromkeys([*self._meta.image_keys, *self._meta.video_keys, *self._meta.depth_keys])
+            for cam_key in cam_keys:
                 img_dir = self._get_image_file_dir(episode_index, cam_key)
                 if img_dir.is_dir():
                     shutil.rmtree(img_dir)
